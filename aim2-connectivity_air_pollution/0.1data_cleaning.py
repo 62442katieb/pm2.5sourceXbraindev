@@ -2,12 +2,9 @@
 # coding: utf-8
 
 import pandas as pd
-import numpy as np
-import seaborn as sns
 import abcdWrangler as abcdw
 
-from os.path import join, isdir
-from os import makedirs
+from os.path import join
 
 PROJ_DIR = "/Volumes/projects_herting/LABDOCS/Personnel/Katie/SCEHSC_Pilot/aim2"
 DATA_DIR = "data/"
@@ -34,6 +31,11 @@ address = df['reshist_addr1_urban_area'].dropna().index.get_level_values(0).uniq
 # scanner manufacturer & pre-covid only matters for change scores
 # so we only need the ppt IDs 
 siemens = df[df['mri_info_manufacturer'] == 'SIEMENS'].index.get_level_values(0).unique()
+
+interlopers = df.loc[siemens][df.loc[siemens]['mri_info_manufacturer'] != "SIEMENS"]["mri_info_manufacturer"].dropna().index.get_level_values(0).unique()
+
+siemens = list(set(siemens) - set(interlopers))
+
 # QC filtering - censoring all ppts whose 2-year follow-up visit was after covid
 # bc a global pandemic is a pretty serious confounder LOL
 pre_covid = df[df["interview_date"] < '2020-03-01'].xs('2_year_follow_up_y_arm_1', level=1).index.get_level_values(0).unique()
@@ -47,10 +49,11 @@ good_fmri_base = list(set(good_fmri_base) & set(address))
 complete_base = df.loc[good_fmri_base][DEMO_VARS].dropna().index.get_level_values(0).unique()
 
 siemens = list(set(siemens) & set(complete_base))
-pre_covid = list(set(pre_covid) & set(siemens))
+pre_covid = list(set(pre_covid) & set(complete_base))
 good_fmri_y2fu = [i[0] for i in good_fmri if i[1] == '2_year_follow_up_y_arm_1']
 
 good_fmri_delta = list(set(good_fmri_y2fu) & set(pre_covid))
+siemens_change = list(set(good_fmri_delta) & set(siemens))
 
 all_ppts = df.index.get_level_values(0).unique()
 sample_size = pd.DataFrame(
@@ -63,7 +66,8 @@ sample_size = pd.DataFrame(
         'Address',
         'fMRI QC base',
         'base complete',
-        'SIEMENS',
+        'SIEMENS base',
+        'SIEMENS change',
         'Pre-COVID',
         'delta complete',
     ]
@@ -99,9 +103,14 @@ col_to_df = {
     'ABCD Study': all_ppts,
     'Address': address,
     'fMRI QC base': good_fmri_base,
+    # both scanners, baseline data
     'base complete': list(set(complete_base)),
-    'SIEMENS': siemens,
+    # SIEMENS only, baseline data
+    'SIEMENS base': siemens,
     'Pre-COVID': pre_covid,
+    # SIEMENS only change scores
+    'SIEMENS change': siemens_change,
+    # both scanners, change scores
     'delta complete': good_fmri_delta
     }
 
@@ -112,7 +121,8 @@ ppts = pd.DataFrame(
         'Address',
         'fMRI QC base',
         'base complete',
-        'SIEMENS',
+        'SIEMENS base',
+        'SIEMENS change',
         'Pre-COVID',
         'delta complete',
     ]
@@ -156,12 +166,19 @@ model_vars = [
     "stq_y_ss_weekday", 
     "stq_y_ss_weekend",
     ]
-
+# both scanners
 base_df = df.loc[complete_base].xs('baseline_year_1_arm_1', level=1)
 base_df.to_pickle(join(PROJ_DIR, DATA_DIR, "data_qcd_base.pkl"))
+# siemens only 
+base_df = df.loc[siemens].xs('baseline_year_1_arm_1', level=1)
+base_df.to_pickle(join(PROJ_DIR, DATA_DIR, "data_qcd_base-siemens.pkl"))
 
+# both scanners
 delta_df = df.loc[good_fmri_delta]
 delta_df.to_pickle(join(PROJ_DIR, DATA_DIR, "data_qcd_delta.pkl"))
+# siemens only
+delta_df = df.loc[siemens_change]
+delta_df.to_pickle(join(PROJ_DIR, DATA_DIR, "data_qcd_delta-siemens.pkl"))
 
 table = pd.DataFrame(
     index=[
@@ -171,9 +188,13 @@ table = pd.DataFrame(
 )
 
 vars = [
+    'interview_age',
+    'demo_sex_v2_bl',
+    'rsfmri_meanmotion',
     'race_ethnicity_c_bl',
     'household_income_4bins_bl',
     'reshist_addr1_popdensity',
+    'mri_info_manufacturer',
     'ehi_y_ss_scoreb', 
     'reshist_addr1_proxrd',
     'reshist_addr1_urban_area', 
