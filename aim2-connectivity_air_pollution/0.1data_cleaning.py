@@ -27,26 +27,28 @@ DEMO_VARS = [
 df = pd.read_pickle(join(PROJ_DIR, DATA_DIR, "data.pkl"))
 
 df['interview_date'] = pd.to_datetime(df['interview_date'], format="%m/%d/%Y")
-address = df['reshist_addr1_urban_area'].dropna().index.get_level_values(0).unique()
+
+trim_df = df[df['site_id_l'] != 'site15']
+address = trim_df['reshist_addr1_urban_area'].dropna().index.get_level_values(0).unique()
 # scanner manufacturer & pre-covid only matters for change scores
 # so we only need the ppt IDs 
-siemens = df[df['mri_info_manufacturer'] == 'SIEMENS'].index.get_level_values(0).unique()
+siemens = trim_df[trim_df['mri_info_manufacturer'] == 'SIEMENS'].index.get_level_values(0).unique()
 
-interlopers = df.loc[siemens][df.loc[siemens]['mri_info_manufacturer'] != "SIEMENS"]["mri_info_manufacturer"].dropna().index.get_level_values(0).unique()
+interlopers = trim_df.loc[siemens][trim_df.loc[siemens]['mri_info_manufacturer'] != "SIEMENS"]["mri_info_manufacturer"].dropna().index.get_level_values(0).unique()
 
 siemens = list(set(siemens) - set(interlopers))
 
 # QC filtering - censoring all ppts whose 2-year follow-up visit was after covid
 # bc a global pandemic is a pretty serious confounder LOL
-pre_covid = df[df["interview_date"] < '2020-03-01'].xs('2_year_follow_up_y_arm_1', level=1).index.get_level_values(0).unique()
+pre_covid = trim_df[trim_df["interview_date"] < '2020-03-01'].xs('2_year_follow_up_y_arm_1', level=1).index.get_level_values(0).unique()
 change_score_eligible = list(set(siemens) & set(pre_covid) & set(address))
 
 # returns index of ppts who meet inclusion criteria
-good_fmri = abcdw.fmri_qc(df, ntpoints=750, motion_thresh=0.5)
+good_fmri = abcdw.fmri_qc(trim_df, ntpoints=750, motion_thresh=0.5)
 
 good_fmri_base = [i[0] for i in good_fmri if i[1] == 'baseline_year_1_arm_1']
 good_fmri_base = list(set(good_fmri_base) & set(address))
-complete_base = df.loc[good_fmri_base][DEMO_VARS].dropna().index.get_level_values(0).unique()
+complete_base = trim_df.loc[good_fmri_base][DEMO_VARS].dropna().index.get_level_values(0).unique()
 
 siemens = list(set(siemens) & set(complete_base))
 pre_covid = list(set(pre_covid) & set(complete_base))
@@ -56,6 +58,7 @@ good_fmri_delta = list(set(good_fmri_y2fu) & set(pre_covid))
 siemens_change = list(set(good_fmri_delta) & set(siemens))
 
 all_ppts = df.index.get_level_values(0).unique()
+not_site15 = trim_df.index.get_level_values(0).unique()
 sample_size = pd.DataFrame(
     columns=[
         'keep', 
@@ -63,6 +66,7 @@ sample_size = pd.DataFrame(
     ],
     index=[
         'ABCD Study',
+        'Not site15'
         'Address',
         'fMRI QC base',
         'base complete',
@@ -76,8 +80,13 @@ sample_size = pd.DataFrame(
 
 sample_size.at['ABCD Study', 'keep'] = len(all_ppts)
 sample_size.at['ABCD Study', 'drop'] = 0
+
+sample_size.at['Not site15', 'keep'] = len(not_site15)
+sample_size.at['Not site15', 'drop'] = len(all_ppts) - len(not_site15)
+
+
 sample_size.at['Address', 'keep'] = len(address)
-sample_size.at['Address', 'drop'] = len(all_ppts) - len(address)
+sample_size.at['Address', 'drop'] = len(not_site15) - len(address)
 
 # imaging quality control at baselien
 sample_size.at['fMRI QC base', 'keep'] = len(good_fmri_base)
@@ -101,6 +110,7 @@ sample_size.to_csv(join(PROJ_DIR, OUTP_DIR, 'sample_size_qc.csv'))
 
 col_to_df = {
     'ABCD Study': all_ppts,
+    'Not site15': not_site15,
     'Address': address,
     'fMRI QC base': good_fmri_base,
     # both scanners, baseline data
@@ -118,6 +128,7 @@ ppts = pd.DataFrame(
     index=all_ppts,
     columns=[
         'ABCD Study',
+        'Not site15',
         'Address',
         'fMRI QC base',
         'base complete',
