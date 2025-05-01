@@ -96,7 +96,7 @@ for network1 in NETWORKS:
         rsfmri_df.at[network1, network2] = var_
 rsfmri_vars = rsfmri_df.values[upper_tri]
 
-changes = pd.read_pickle(join(PROJ_DIR, DATA_DIR, "delta_rsFC-rci_abs.pkl"))
+changes = pd.read_pickle(join(PROJ_DIR, DATA_DIR, "delta_rsFC-rci.pkl"))
 nonbrain = pd.read_pickle(join(PROJ_DIR, DATA_DIR, "data_qcd_delta.pkl")).dropna(how='all')
 nonbrain = nonbrain.drop(nonbrain.filter(like='rsfmri_c_ngd', axis=1).columns, axis=1)
 

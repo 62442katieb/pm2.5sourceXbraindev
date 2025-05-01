@@ -140,7 +140,7 @@ dat = abcdw.data_grabber(ABCD_DIR, VARS, ['baseline_year_1_arm_1','2_year_follow
 dat2 = abcdw.data_grabber(ABCD_DIR, LED_VARS, 'baseline_year_1_arm_1')
 dat2.index = pd.MultiIndex.from_product([dat2.index, ['baseline_year_1_arm_1']])
 demo_df = pyreadr.read_r(
-    '/Volumes/projects_herting/LABDOCS/PROJECTS/ABCD/ABCD_Covariates/ABCD_release5.1/01_Demographics/ABCD_5.1_demographics_full.RDS'
+    '/Volumes/projects_herting/LABDOCS/PROJECTS/ABCD/ABCD_Covariates/ABCD_release5.1/01_Demographics/ABCD_5.1_demographics_complete.RDS'
 )
 demo_df = demo_df[None]
 demo_df = demo_df[demo_df['eventname'] == 'baseline_year_1_arm_1']

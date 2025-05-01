@@ -27,18 +27,18 @@ today_str = strftime("%m_%d_%Y")
 
 sns.set(context="paper")
 
-PROJ_DIR = "/Volumes/projects_herting/LABDOCS/Personnel/Katie/SCEHSC_Pilot/aim2"
+PROJ_DIR = "/home"
 DATA_DIR = "data"
 OUTP_DIR = "output"
 FIGS_DIR = "figures"
 
 OUTCOMES = [
-    "F4",
+    #"F1",
+    #"F2",
+    #"F3",
+    #"F4",
     "F5",
-    "F6",
-    "F3",
-    "F2",
-    "F1",
+    #"F6",
     ]
 CONFOUNDS = ["demo_sex_v2_bl",
               "interview_age",
@@ -97,8 +97,9 @@ for network1 in NETWORKS:
         rsfmri_df.at[network1, network2] = var_
 rsfmri_vars = rsfmri_df.values[upper_tri]
 
-dat = pd.read_pickle(join(PROJ_DIR, DATA_DIR, "data_qcd_base.pkl")).dropna()
-
+dat = pd.read_pickle(join(PROJ_DIR, DATA_DIR, "data_qcd_base-siemens.pkl")).dropna()
+#dat = pd.read_pickle(join(PROJ_DIR, DATA_DIR, "delta_rsFC-rci_abs.pkl")).dropna()
+print('rows =', len(dat.index), '\tcols =', len(dat.columns))
 groups = dat[GROUPS]
 edges = dat[rsfmri_vars]
 
@@ -123,7 +124,7 @@ for confound in CONFOUNDS:
 for OUTCOME in OUTCOMES:
     base_name = f"nbs-predict_outcome-{OUTCOME}"
     outcome = np.reshape(dat[OUTCOME].values, (len(dat[OUTCOME]), 1))
-
+    print('starting', base_name)
     weighted_average, cv_results = nbs.kfold_nbs(
         edges.values, outcome, confounds, alpha, 
         groups=groups, num_node=num_node, diagonal=True, 
@@ -204,11 +205,14 @@ for OUTCOME in OUTCOMES:
             keep = dat[dat[GROUPS] != group].index
             keep = list(set(keep) & set(edges2.index))
             edges2 = edges2.loc[keep]
-    outcome = np.reshape(dat.loc[keep][OUTCOME].values, (len(dat.loc[keep][OUTCOME]), 1))
-    temp_groups = dat.loc[keep][GROUPS]
+            outcome = np.reshape(dat.loc[keep][OUTCOME].values, (len(dat.loc[keep][OUTCOME]), 1))
+            temp_groups = dat.loc[keep][GROUPS]
+        else:
+            outcomes = np.reshape(dat[OUTCOME].values, (len(dat[OUTCOME]), 1))
+            temp_groups = dat[GROUPS]
     n_splits = logo.get_n_splits(edges2, outcome, groups=temp_groups)
     model_res = pd.DataFrame(
-        index=range(0,n_splits),
+        index=temp_groups.unique(),
         columns=metrics
         )
 
@@ -219,7 +223,7 @@ for OUTCOME in OUTCOMES:
         edges_train =  edges2.iloc[train_index]
         outcome_train = outcome[train_index]
         confounds_train = confounds.iloc[train_index]
-
+        site = temp_groups.iloc[test_index].unique()[0]
         edges_test =  edges2.iloc[test_index]
         outcome_test = outcome[test_index]
         confounds_test = confounds.iloc[test_index]
@@ -261,14 +265,14 @@ for OUTCOME in OUTCOMES:
         #model.set_params(**params)
         # train ElasticNet on full train dataset, using feature extraction from NBS-Predict
         fitted = model.fit(edges_train, outcome_train)
-        model_res.at[i, 'score'] = fitted.score(edges_test, outcome_test)
+        model_res.at[site, 'score'] = fitted.score(edges_test, outcome_test)
         
         y_pred = fitted.predict(X=edges_test)
         #predicted[f"predicted {i}"] = y_pred
         #actual[f"actual {i}"] = outcome_test
         spearman = spearmanr(outcome_test, y_pred)
-        model_res.at[i, 'mse'] = mean_squared_error(outcome_test, y_pred)
-        model_res.at[i, 'corr'] = spearman.correlation
+        model_res.at[site, 'mse'] = mean_squared_error(outcome_test, y_pred)
+        model_res.at[site, 'corr'] = spearman.correlation
     #actual_df = pd.DataFrame.from_dict(actual)
     #predicted_df = pd.DataFrame.from_dict(predicted)
     #outcomes = pd.concat([actual_df, predicted_df], axis=1)
