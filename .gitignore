@@ -2,3 +2,5 @@
 **.ipynb_checkpoints
 aim1-cytoarchitecture_air_pollution/test_method_validation.ipynb
 nbsp_out/** */
+.idea/** */
+.vscode/** */
