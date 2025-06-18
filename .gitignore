@@ -5,3 +5,7 @@ nbsp_out/** */
 .idea/** */
 .vscode/** */
 **/nbs-predict**
+**.nii
+**.nii.gz
+
+**.ipynb
