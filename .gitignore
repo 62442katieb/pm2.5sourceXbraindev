@@ -7,5 +7,5 @@ nbsp_out/** */
 **/nbs-predict**
 **.nii
 **.nii.gz
-
+**.xml
 **.ipynb
