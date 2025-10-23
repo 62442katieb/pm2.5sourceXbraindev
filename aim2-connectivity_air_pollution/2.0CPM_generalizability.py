@@ -255,6 +255,12 @@ delta_ntwk_sum = pd.DataFrame(
     columns=sources.keys()
 )
 
+both_ntwk_sum = pd.DataFrame(
+    dtype=float,
+    index=NETWORKS,
+    columns=sources.keys()
+)
+
 
 comparison = {}
 for source in sources.keys():
@@ -266,18 +272,14 @@ for source in sources.keys():
     delta_corr_temp = delta_corr_df.loc[source]
 
     ########################
-    delta_bin = delta_corr_temp.isna().replace(
-        {
-            True: '',
-            False: 'Δ'
-        }
-    )
-    corr_bin = corr_temp.isna().replace(
-        {
-            True: '',
-            False: '$Τ_1$'
-        }
-    )
+    corr_plus = delta_corr_temp > 0.01
+    corr_minus = delta_corr_temp < -0.01
+    delta_bin = corr_plus.replace({ False: '', True: 'Δ'}) + corr_minus.replace({ False: '', True: 'Δ'})
+    
+    corr_plus = corr_temp > 0.01
+    corr_minus = corr_temp < -0.01
+    corr_bin = corr_plus.replace({ False: '', True: '$Τ_1$'}) + corr_minus.replace({ False: '', True: '$Τ_1$'})
+    
     both = corr_bin + delta_bin
     both = both.replace(
         {
@@ -298,12 +300,27 @@ for source in sources.keys():
     for var in num_temp.columns:
         ntwk1 = var.split('_')[3]
         ntwk2 = var.split('_')[5]
-        avg_df.at[ntwk1, ntwk2] = num_temp[var].mean()
-        avg_df.at[ntwk2, ntwk1] = num_temp[var].mean()
-        mode_df.at[ntwk1, ntwk2] = both[var].mode()[0]
-        mode_df.at[ntwk2, ntwk1] = both[var].mode()[0]
+        mean = num_temp[var].mean()
+        if np.abs(mean) > 0.01:
+            avg_df.at[ntwk1, ntwk2] = mean
+            avg_df.at[ntwk2, ntwk1] = mean
+        mode = both[var].mode()
+        if len(mode) > 0:
+            mode_df.at[ntwk1, ntwk2] = mode[0]
+            mode_df.at[ntwk2, ntwk1] = mode[0]
+        else: 
+            mode_df.at[ntwk1, ntwk2] = ''
+            mode_df.at[ntwk2, ntwk1] = ''
     fig,ax = plt.subplots(figsize=(7,7))
-    sns.heatmap(avg_df, annot=mode_df, fmt='', cmap='seismic', center=0, square=True,ax=ax),
+    sns.heatmap(
+        avg_df, 
+        annot=mode_df, 
+        fmt='', 
+        cmap='seismic', 
+        center=0, 
+        square=True,
+        ax=ax
+    )
     ax.set_title(sources[source])
     fig.savefig(
         join(PROJ_DIR, FIGS_DIR, f'{source}-timepoints_avg.png'),
@@ -313,6 +330,7 @@ for source in sources.keys():
     for network in NETWORKS:
         ntwk_sum.at[network, source] = np.sum(np.abs(mse_temp.filter(like=network).mean()) > 0.01)
         delta_ntwk_sum.at[network, source] = np.sum(delta_temp.filter(like=network).mean() > 0.01)
+        both_ntwk_sum.at[network, source] = np.sum(mse_temp.filter(like=network).mean() + delta_temp.filter(like=network).mean() > 0.01)
     mse_temp = mse_temp.mean(axis=1)
     base_corrs = mse_df.loc[source].mean().dropna()
     delta_corrs = delta_mse_df.loc[source].mean().dropna()
@@ -414,6 +432,21 @@ locs.to_pickle(
     join(PROJ_DIR, DATA_DIR, 'geocoded_sites.pkl')
 )
 locs.to_file("geocoded_sites.geojson", driver='GeoJSON')
+
+
+for i in locs.index:
+    for source in sources:
+        site = locs.loc[i]['site_nums']
+        avg = df[df['site_id_l'] == site][source].mean()
+        std = df[df['site_id_l'] == site][source].std()
+        locs.at[i, f'{source}_mean'] = avg
+        locs.at[i, f'{source}_sdev'] = std
+        if site == 'site15':
+            mri = 'SIEMENS'
+        else:
+            mri = df[df['site_id_l'] == site]['mri_info_manufacturer'].unique()[0]
+        locs.at[i, 'MRI'] = mri
+
 
 for i in locs.index:
     for source in sources:
@@ -700,6 +733,14 @@ for source in sources.keys():
         else:
             corrmat.at[NETWORKS[network1], network2] = 999
             corrmat.at[NETWORKS[network2], network1] = 999
+    corrmat.replace(
+        {
+            0: np.nan,
+            999: 0
+        }
+    ).to_csv(
+        join(PROJ_DIR, OUTP_DIR, f'CPM-{source}-baseline_corrs.csv')
+    )
     triangle = pd.DataFrame(
         np.tril(corrmat),
         index=corrmat.index,
@@ -749,6 +790,14 @@ for source in sources.keys():
         else:
             corrmat.at[NETWORKS[network1], network2] = 999
             corrmat.at[NETWORKS[network2], network1] = 999
+    corrmat.replace(
+        {
+            0: np.nan,
+            999: 0
+        }
+    ).to_csv(
+        join(PROJ_DIR, OUTP_DIR, f'CPM-{source}-baseline_corrs.csv')
+    )
     triangle = pd.DataFrame(
         np.tril(corrmat),
         index=corrmat.index,

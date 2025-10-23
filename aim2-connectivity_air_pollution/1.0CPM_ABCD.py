@@ -175,8 +175,19 @@ tocks = manager.counter(
     desc='Progress', 
     unit='models'
 )
+model_scores = pd.DataFrame(
+    columns=pd.MultiIndex.from_product(
+        [
+            ['rsq', 'mse'],
+            ['avg', 'std']
+        ]
+    ),
+    index=OUTCOMES
+)
 
 for outcome in OUTCOMES:
+    r_squared = []
+    mserror = []
     for i, (train_index, test_index) in enumerate(logo.split(edges, dat[outcome], groups)):
         left_out = groups.iloc[test_index].unique()[0]
         #print(outcome, left_out)
@@ -251,6 +262,11 @@ for outcome in OUTCOMES:
                 X_train = X_train.values.reshape(-1, 1)
 
             cve = linreg.fit(X_train, y_train)
+            train_pred = cve.predict(X_train)
+            # get training performance
+            r_squared.append(r2_score(y_train, train_pred))
+            mserror.append(mean_squared_error(y_train, train_pred))
+
             y_pred = cve.predict(X_test)
             rmse = np.sqrt(mean_squared_error(y_test, y_pred))
             rsq = r2_score(y_test, y_pred)
@@ -261,6 +277,10 @@ for outcome in OUTCOMES:
         else:
             pass
         tocks.update()
+    model_scores.at[outcome, ['rsq', 'avg']] = np.mean(r_squared)
+    model_scores.at[outcome, ['rsq', 'std']] = np.std(r_squared)
+    model_scores.at[outcome, ['mse', 'avg']] = np.mean(mserror)
+    model_scores.at[outcome, ['mse', 'std']] = np.std(mserror)
 
 
 scores.to_pickle(
@@ -281,4 +301,7 @@ corrs.to_pickle(
 )
 corrs.to_csv(
     join(PROJ_DIR, OUTP_DIR, 'CPM-corrs.csv')
+)
+model_scores.to_csv(
+    join(PROJ_DIR, OUTP_DIR, 'CPM-training_scores.csv')
 )
