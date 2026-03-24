@@ -1,28 +1,28 @@
-from sklearn.kernel_ridge import KernelRidge
+#from sklearn.kernel_ridge import KernelRidge
 from sklearn.linear_model import LinearRegression
-from sklearn.model_selection import GridSearchCV
-from sklearn.model_selection import cross_val_predict
-from sklearn.model_selection import cross_val_score
+#from sklearn.model_selection import GridSearchCV
+#from sklearn.model_selection import cross_val_predict
+#from sklearn.model_selection import cross_val_score
 from sklearn.model_selection import GroupKFold, LeaveOneGroupOut
 from sklearn.feature_selection import SelectFpr
 from sklearn.feature_selection import f_regression
 from sklearn.metrics import mean_squared_error, r2_score
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.pipeline import Pipeline
-from sklearn import metrics
+#from sklearn.preprocessing import MinMaxScaler
+#from sklearn.pipeline import Pipeline
+#from sklearn import metrics
 
 import numpy as np
-import scipy.io as sio
+#import scipy.io as sio
 import pingouin as pg
-import h5py
+#import h5py
 
-import time
+#import time
 from os.path import join
 from datetime import datetime
 from time import strftime
 import seaborn as sns
 import pandas as pd
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 
 import warnings
 import enlighten
@@ -69,6 +69,7 @@ OUTCOMES = [
     "F4",
     "F5",
     "F6",
+    "reshist_addr1_pm252016aa"
     ]
 CONFOUNDS = ["demo_sex_v2_bl",
               "interview_age",
@@ -145,7 +146,7 @@ for confound in CONFOUNDS:
         #print(temp.columns)
         confounds = pd.concat([confounds.drop(confound, axis=1), temp], axis=1)
 
-linreg = LinearRegression()
+linreg = LinearRegression(fit_intercept=True)
 
 #cv10 = GroupKFold(n_splits=10)
 logo = LeaveOneGroupOut()
@@ -265,7 +266,7 @@ for outcome in OUTCOMES:
             train_pred = cve.predict(X_train)
             # get training performance
             r_squared.append(r2_score(y_train, train_pred))
-            mserror.append(mean_squared_error(y_train, train_pred))
+            mserror.append(np.sqrt(mean_squared_error(y_train, train_pred)))
 
             y_pred = cve.predict(X_test)
             rmse = np.sqrt(mean_squared_error(y_test, y_pred))
@@ -277,31 +278,31 @@ for outcome in OUTCOMES:
         else:
             pass
         tocks.update()
-    model_scores.at[outcome, ['rsq', 'avg']] = np.mean(r_squared)
-    model_scores.at[outcome, ['rsq', 'std']] = np.std(r_squared)
-    model_scores.at[outcome, ['mse', 'avg']] = np.mean(mserror)
-    model_scores.at[outcome, ['mse', 'std']] = np.std(mserror)
+    model_scores.at[outcome, ('rsq', 'avg')] = np.mean(r_squared)
+    model_scores.at[outcome, ('rsq', 'std')] = np.std(r_squared)
+    model_scores.at[outcome, ('mse', 'avg')] = np.mean(mserror)
+    model_scores.at[outcome, ('mse', 'std')] = np.std(mserror)
 
 
 scores.to_pickle(
-    join(PROJ_DIR, OUTP_DIR, 'CPM-mse.pkl')
+    join(PROJ_DIR, OUTP_DIR, 'CPM-mse_pm25.pkl')
 )
 scores.to_csv(
-    join(PROJ_DIR, OUTP_DIR, 'CPM-mse.csv')
+    join(PROJ_DIR, OUTP_DIR, 'CPM-mse_pm25.csv')
 )
 
 r_sqs.to_pickle(
-    join(PROJ_DIR, OUTP_DIR, 'CPM-rsq.pkl')
+    join(PROJ_DIR, OUTP_DIR, 'CPM-rsq_pm25.pkl')
 )
 r_sqs.to_csv(
-    join(PROJ_DIR, OUTP_DIR, 'CPM-rsq.csv')
+    join(PROJ_DIR, OUTP_DIR, 'CPM-rsq_pm25.csv')
 )
 corrs.to_pickle(
-    join(PROJ_DIR, OUTP_DIR, 'CPM-corrs.pkl')
+    join(PROJ_DIR, OUTP_DIR, 'CPM-corrs_pm25.pkl')
 )
 corrs.to_csv(
-    join(PROJ_DIR, OUTP_DIR, 'CPM-corrs.csv')
+    join(PROJ_DIR, OUTP_DIR, 'CPM-corrs_pm25.csv')
 )
 model_scores.to_csv(
-    join(PROJ_DIR, OUTP_DIR, 'CPM-training_scores.csv')
+    join(PROJ_DIR, OUTP_DIR, 'CPM-training_scores_pm25.csv')
 )

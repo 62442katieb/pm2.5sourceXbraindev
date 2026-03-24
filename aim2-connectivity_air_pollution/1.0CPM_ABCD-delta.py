@@ -14,7 +14,7 @@ from sklearn import metrics
 import numpy as np
 import scipy.io as sio
 import pingouin as pg
-import h5py
+#import h5py
 
 import time
 from os.path import join
@@ -101,6 +101,7 @@ OUTCOMES = [
     "F4",
     "F5",
     "F6",
+    "reshist_addr1_pm252016aa"
     ]
 CONFOUNDS = ["demo_sex_v2_bl",
               "interview_age",
@@ -294,14 +295,14 @@ for outcome in OUTCOMES:
         tocks.update()
 
 scores.to_pickle(
-    join(PROJ_DIR, OUTP_DIR, 'CPM-delta-mse.pkl')
+    join(PROJ_DIR, OUTP_DIR, 'CPM-delta-mse_pm25.pkl')
 )
 scores.to_csv(
-    join(PROJ_DIR, OUTP_DIR, 'CPM-delta-mse.csv')
+    join(PROJ_DIR, OUTP_DIR, 'CPM-delta-mse_pm25.csv')
 )
 corrs.to_pickle(
-    join(PROJ_DIR, OUTP_DIR, 'CPM-delta-corrs.pkl')
+    join(PROJ_DIR, OUTP_DIR, 'CPM-delta-corrs_pm25.pkl')
 )
 corrs.to_csv(
-    join(PROJ_DIR, OUTP_DIR, 'CPM-delta-corrs.csv')
+    join(PROJ_DIR, OUTP_DIR, 'CPM-delta-corrs_pm25.csv')
 )
