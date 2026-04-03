@@ -1,20 +1,22 @@
-from sklearn.kernel_ridge import KernelRidge
+#from sklearn.kernel_ridge import KernelRidge
 from sklearn.linear_model import LinearRegression
-from sklearn.model_selection import GridSearchCV
-from sklearn.model_selection import cross_val_predict
-from sklearn.model_selection import cross_val_score
-from sklearn.model_selection import LeavePGroupsOut, LeaveOneGroupOut, RepeatedKFold
+#from sklearn.model_selection import GridSearchCV
+#from sklearn.model_selection import cross_val_predict
+#from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import GroupKFold, LeaveOneGroupOut
 from sklearn.feature_selection import SelectFpr
 from sklearn.feature_selection import f_regression
 from sklearn.metrics import mean_squared_error, r2_score
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.pipeline import Pipeline
-from sklearn import metrics
+from sklearn.preprocessing import StandardScaler
+#from sklearn.pipeline import Pipeline
+#from sklearn import metrics
 
 import numpy as np
-import scipy.io as sio
+#import scipy.io as sio
 import pingouin as pg
 #import h5py
+from scipy import stats
+
 
 import time
 from os.path import join
@@ -81,6 +83,28 @@ def jili_sidak_mc(data, alpha):
     else:
         print('Critical value of {:.3f}'.format(alpha),'becomes {:.6f} after corrections'.format(sidak_p))
     return sidak_p, M_eff
+
+def confint(model, X, y, alpha):
+    coefs = np.r_[[model.intercept_], model.coef_]
+    # build an auxiliary dataframe with the constant term in it
+    X_aux = pd.DataFrame(X.copy())
+    X_aux.insert(0, 'const', 1)
+    # degrees of freedom
+    dof = -np.diff(X_aux.shape)[0]
+    # Student's t-distribution table lookup
+    t_val = stats.t.isf(alpha/2, dof)
+    # MSE of the residuals
+    mse = np.sum((y - model.predict(X)) ** 2) / dof
+    # inverse of the variance of the parameters
+    var_params = np.diag(np.linalg.inv(X_aux.T.dot(X_aux)))
+    # distance between lower and upper bound of CI
+    gaps = t_val * np.sqrt(mse * var_params)
+    conf_int = []
+    for i in range(1,len(coefs)):
+        coef = coefs[i]
+        gap = gaps[i]
+        conf_int.append((np.round(coef - gap, 3), np.round(coef + gap, 3)))
+    return conf_int
 
 today = datetime.today()
 today_str = strftime("%m_%d_%Y")
@@ -154,8 +178,8 @@ as_factor = ["household_income_4bins_bl",
               "site_id_l"]
 
 
-dat = pd.read_pickle(join(PROJ_DIR, DATA_DIR, "data_qcd_delta-siemens.pkl")).dropna()
-#dat = pd.read_pickle(join(PROJ_DIR, DATA_DIR, "delta_rsFC-rci_abs.pkl")).dropna()
+#dat = pd.read_pickle(join(PROJ_DIR, DATA_DIR, "data_qcd_delta-siemens.pkl")).dropna()
+dat = pd.read_pickle(join(PROJ_DIR, DATA_DIR, "delta_rsFC-rci_abs-siemens.pkl")).dropna()
 print('rows =', len(dat.index), '\tcols =', len(dat.columns))
 groups = dat[GROUPS]
 edges = dat.filter(like='rsfmri_c_ngd')
@@ -178,7 +202,7 @@ for confound in CONFOUNDS:
         #print(temp.columns)
         confounds = pd.concat([confounds.drop(confound, axis=1), temp], axis=1)
 
-linreg = LinearRegression()
+linreg = LinearRegression(fit_intercept=True)
 
 #cv10 = GroupKFold(n_splits=10)
 logo = LeaveOneGroupOut()
@@ -201,6 +225,17 @@ r_sqs = pd.DataFrame(
     columns=edges.columns,
     index=index
 )
+
+model_out = pd.DataFrame(
+    columns=pd.MultiIndex.from_product(
+        [
+            OUTCOMES, 
+            ['positive_beta','positive_95ci', 'negative_beta','negative_95ci', 'rsq_train', 'rsq_test', 'rmse_train', 'rmse_test']]
+    ),
+    index=groups.unique()
+)
+
+
 manager = enlighten.get_manager()
 tocks = manager.counter(
     total=len(index), 
@@ -283,9 +318,32 @@ for outcome in OUTCOMES:
                 X_train = X_train.values.reshape(-1, 1)
 
             cve = linreg.fit(X_train, y_train)
+            cintervals = confint(cve, X_train, y_train, 0.05)
+            if len(pos_features) > 0:
+                model_out.at[left_out, (outcome, 'positive_beta')] = cve.coef_[0] * (positive.squeeze().std() / y_train.std())
+                model_out.at[left_out, (outcome, 'positive_95ci')] = cintervals[0]
+                #print(len(pos_features), cve.coef_[0] * (positive.std() / y_train.std()))
+                if len(neg_features) > 0:
+                    model_out.at[left_out, (outcome, 'negative_beta')] = cve.coef_[1] * (negative.squeeze().std() / y_train.std())
+                    model_out.at[left_out, (outcome, 'negative_95ci')] = cintervals[1]
+                else:
+                    pass
+            elif len(neg_features) > 0:
+                model_out.at[left_out, (outcome, 'negative_beta')] = cve.coef_[0] * (negative.squeeze().std() / y_train.std())
+                model_out.at[left_out, (outcome, 'negative_95ci')] = cintervals[0]
+            train_pred = cve.predict(X_train)
+            # get training performance
+            train_rsq = r2_score(y_train, train_pred)
+            model_out.at[left_out, (outcome, 'rsq_train')] = train_rsq
+            #r_squared.append(train_rsq)
+            train_rmse = np.sqrt(mean_squared_error(y_train, train_pred))
+            #mserror.append(train_rmse)
+            model_out.at[left_out, (outcome, 'rmse_train')] = train_rmse
             y_pred = cve.predict(X_test)
             rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+            model_out.at[left_out, (outcome, 'rmse_test')] = rmse
             rsq = r2_score(y_test, y_pred)
+            model_out.at[left_out, (outcome, 'rsq_test')] = rsq
             for col in sig_features:
                 scores.at[(outcome, left_out), col] = rmse
                 r_sqs.at[(outcome, left_out), col] = rsq
@@ -300,9 +358,21 @@ scores.to_pickle(
 scores.to_csv(
     join(PROJ_DIR, OUTP_DIR, 'CPM-delta-mse_pm25.csv')
 )
+r_sqs.to_pickle(
+    join(PROJ_DIR, OUTP_DIR, 'CPM-delta-rsq_pm25.pkl')
+)
+r_sqs.to_csv(
+    join(PROJ_DIR, OUTP_DIR, 'CPM-delta-rsq_pm25.csv')
+)
 corrs.to_pickle(
     join(PROJ_DIR, OUTP_DIR, 'CPM-delta-corrs_pm25.pkl')
 )
 corrs.to_csv(
     join(PROJ_DIR, OUTP_DIR, 'CPM-delta-corrs_pm25.csv')
+)
+model_out.to_csv(
+    join(PROJ_DIR, OUTP_DIR, 'model_stats_delta.csv')
+)
+model_out.to_pickle(
+    join(PROJ_DIR, OUTP_DIR, 'model_stats_delta.pkl')
 )

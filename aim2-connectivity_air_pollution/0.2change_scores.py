@@ -92,7 +92,6 @@ for conn in conns:
             age2 = y2fu_rsfc.loc[i, 'interview_age'] / 12.
             base = base_resid.loc[i, conn]
             y2fu = y2fu_resid.loc[i, conn]
-            # @Jo add simple_change using np.tanh(base)
             rci.at[i,conn] = ((y2fu - base) / sem) / (age2 - age0)
             rci_abs.at[i,conn] = ((np.abs(y2fu) - np.abs(base)) / abs_sem) / (age2 - age0)
             #print(base * y2fu)

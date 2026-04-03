@@ -15,6 +15,8 @@ import numpy as np
 #import scipy.io as sio
 import pingouin as pg
 #import h5py
+from scipy import stats
+
 
 #import time
 from os.path import join
@@ -50,6 +52,27 @@ def residualize(X, confounds=None):
             resid_X[:, i] = X_.residuals_.flatten()
     return resid_X
 
+def confint(model, X, y, alpha):
+    coefs = np.r_[[model.intercept_], model.coef_]
+    # build an auxiliary dataframe with the constant term in it
+    X_aux = pd.DataFrame(X.copy())
+    X_aux.insert(0, 'const', 1)
+    # degrees of freedom
+    dof = -np.diff(X_aux.shape)[0]
+    # Student's t-distribution table lookup
+    t_val = stats.t.isf(alpha/2, dof)
+    # MSE of the residuals
+    mse = np.sum((y - model.predict(X)) ** 2) / dof
+    # inverse of the variance of the parameters
+    var_params = np.diag(np.linalg.inv(X_aux.T.dot(X_aux)))
+    # distance between lower and upper bound of CI
+    gaps = t_val * np.sqrt(mse * var_params)
+    conf_int = []
+    for i in range(1,len(coefs)):
+        coef = coefs[i]
+        gap = gaps[i]
+        conf_int.append((np.round(coef - gap, 3), np.round(coef + gap, 3)))
+    return conf_int
 
 today = datetime.today()
 today_str = strftime("%m_%d_%Y")
@@ -184,7 +207,17 @@ model_scores = pd.DataFrame(
             ['avg', 'std']
         ]
     ),
-    index=OUTCOMES
+    index=OUTCOMES,
+    dtype=float
+)
+
+model_out = pd.DataFrame(
+    columns=pd.MultiIndex.from_product(
+        [
+            OUTCOMES, 
+            ['positive_beta', 'negative_beta', 'rsq_train', 'rsq_test', 'rmse_train', 'rmse_test']]
+    ),
+    index=groups.unique()
 )
 
 for outcome in OUTCOMES:
@@ -212,6 +245,7 @@ for outcome in OUTCOMES:
             index=train_outcome.index,
             name=outcome
         )
+        
 
         x = SelectFpr(f_regression, alpha=ALPHA).fit(X_train, y_train)
         sig_features = x.get_feature_names_out(X_train.columns)
@@ -230,6 +264,7 @@ for outcome in OUTCOMES:
                 index=test_outcome.index,
                 name=outcome
             )
+            
             for feature in sig_features:
                 corr = pd.concat([X_train[feature], y_train], axis=1).corr().loc[outcome, feature]
                 corrs.at[(outcome, left_out), feature] = corr
@@ -264,18 +299,36 @@ for outcome in OUTCOMES:
                 X_train = X_train.values.reshape(-1, 1)
 
             cve = linreg.fit(X_train, y_train)
+            cintervals = confint(cve, X_train, y_train, 0.05)
+            if len(pos_features) > 0:
+                model_out.at[left_out, (outcome, 'positive_beta')] = cve.coef_[0] * (positive.squeeze().std() / y_train.std())
+                model_out.at[left_out, (outcome, 'positive_95ci')] = cintervals[0]
+                #print(len(pos_features), cve.coef_[0] * (positive.std() / y_train.std()))
+                if len(neg_features) > 0:
+                    model_out.at[left_out, (outcome, 'negative_beta')] = cve.coef_[1] * (negative.squeeze().std() / y_train.std())
+                    model_out.at[left_out, (outcome, 'negative_95ci')] = cintervals[1]
+                else:
+                    pass
+            elif len(neg_features) > 0:
+                model_out.at[left_out, (outcome, 'negative_beta')] = cve.coef_[0] * (negative.squeeze().std() / y_train.std())
+                model_out.at[left_out, (outcome, 'negative_95ci')] = cintervals[0]
             train_pred = cve.predict(X_train)
             # get training performance
-            r_squared.append(r2_score(y_train, train_pred))
-            mserror.append(np.sqrt(mean_squared_error(y_train, train_pred)))
-
+            train_rsq = r2_score(y_train, train_pred)
+            model_out.at[left_out, (outcome, 'rsq_train')] = train_rsq
+            r_squared.append(train_rsq)
+            train_rmse = np.sqrt(mean_squared_error(y_train, train_pred))
+            mserror.append(train_rmse)
+            model_out.at[left_out, (outcome, 'rmse_train')] = train_rmse
             y_pred = cve.predict(X_test)
             rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+            model_out.at[left_out, (outcome, 'rmse_test')] = rmse
             rsq = r2_score(y_test, y_pred)
+            model_out.at[left_out, (outcome, 'rsq_test')] = rsq
             for col in sig_features:
                 scores.at[(outcome, left_out), col] = rmse
                 r_sqs.at[(outcome, left_out), col] = rsq
-
+            
         else:
             pass
         tocks.update()
@@ -283,7 +336,6 @@ for outcome in OUTCOMES:
     model_scores.at[outcome, ('rsq', 'std')] = np.std(r_squared)
     model_scores.at[outcome, ('mse', 'avg')] = np.mean(mserror)
     model_scores.at[outcome, ('mse', 'std')] = np.std(mserror)
-
 
 scores.to_pickle(
     join(PROJ_DIR, OUTP_DIR, 'CPM-mse_sensitivity.pkl')
@@ -306,4 +358,10 @@ corrs.to_csv(
 )
 model_scores.to_csv(
     join(PROJ_DIR, OUTP_DIR, 'CPM-training_scores_sensitivity.csv')
+)
+model_out.to_csv(
+    join(PROJ_DIR, OUTP_DIR, 'model_stats_sens.csv')
+)
+model_out.to_pickle(
+    join(PROJ_DIR, OUTP_DIR, 'model_stats_sens.pkl')
 )

@@ -4,14 +4,14 @@ import seaborn as sns
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
-import matplotlib.colors as colors
+#import matplotlib.colors as colors
 from matplotlib.ticker import FuncFormatter
 
 from os.path import join
 from scipy.stats import spearmanr
-from scipy.spatial.distance import dice, jaccard
-from nilearn import plotting, surface, datasets
-from geopy.geocoders import Nominatim
+#from scipy.spatial.distance import dice, jaccard
+#from nilearn import plotting, surface, datasets
+#from geopy.geocoders import Nominatim
 import geopandas as gpd
 import geodatasets
 
@@ -19,24 +19,50 @@ import math
 import json
 import matplotlib as mpl
 
-gdf = gpd.read_file('/Users/katherine.b/Dropbox/Mac/Downloads/cb_2018_us_state_500k(1)')
-gdf.head()
+def consistency(df, thresh, return_adj=False):
+    consistency = pd.Series(
+        index=df.columns,
+    )
+    num_sites = len(df.index) * (thresh / 100)
+    adj = pd.DataFrame(
+        index=NETWORKS,
+        columns=NETWORKS,
+        dtype=float
+    )
+    mask = np.triu(np.ones_like(adj, dtype=bool), k=1)
+    print('\n', sources[source])
+    temp = df.astype(float)
+    counts = temp.describe().T.sort_values('count')[['count', 'mean']]
+    for conn in counts.index:
+        if counts.loc[conn]['count'] >= num_sites:
+            ntwk1 = conn.split('_')[3]
+            ntwk2 = conn.split('_')[5]
+            adj.at[ntwk1, ntwk2] = counts.loc[conn]['mean']
+            adj.at[ntwk2, ntwk1] = counts.loc[conn]['mean']
+            consistency.at[conn] = counts.loc[conn]['mean']
+    if return_adj:
+        return consistency.dropna(), adj
+    else:
+        return consistency.dropna()
+    
+#gdf = gpd.read_file('/Users/katherine.b/Dropbox/Mac/Downloads/cb_2018_us_state_500k(1)')
+#gdf.head()
 
 usa = gpd.read_file(geodatasets.get_path('geoda.natregimes'))
 
 sns.set(context='paper', style='white', palette='husl', font_scale=1.5)
 
 
-font_path2 = '/Users/katherine.b/Library/Fonts/Raleway-Regular.ttf'  # Your font path goes here
-fm.fontManager.addfont(font_path2)
-regular = {'fontname':'Raleway'}
+#font_path2 = '/Users/katherine.b/Library/Fonts/Raleway-Regular.ttf'  # Your font path goes here
+#fm.fontManager.addfont(font_path2)
+#regular = {'fontname':'Raleway'}
 
-font_path = '/Users/katherine.b/Library/Fonts/Raleway-ExtraLight.ttf'  # Your font path goes here
-fm.fontManager.addfont(font_path)
-prop = fm.FontProperties(fname=font_path)
+#font_path = '/Users/katherine.b/Library/Fonts/Raleway-ExtraLight.ttf'  # Your font path goes here
+#fm.fontManager.addfont(font_path)
+#prop = fm.FontProperties(fname=font_path)
 
 plt.rcParams['font.family'] = 'sans-serif'
-plt.rcParams['font.sans-serif'] = prop.get_name()
+plt.rcParams['font.sans-serif'] = "Helvetica"
 
 
 PROJ_DIR = "/Volumes/projects_herting/LABDOCS/Personnel/Katie/SCEHSC_Pilot/aim2"
@@ -185,7 +211,8 @@ sources = {
     'F3': 'Biomass Burning',
     'F4': 'Traffic Emissions',
     'F5': 'Ammonium Nitrates',
-    'F6': 'Industrial Fuel'
+    'F6': 'Industrial Fuel',
+    'reshist_addr1_pm252016aa': 'PM2.5'
 }
 
 NETWORKS = [
@@ -204,155 +231,395 @@ NETWORKS = [
     'dt', 
 ]
 
-df = pd.read_pickle(join(PROJ_DIR, DATA_DIR, 'data_qcd_delta.pkl'))
-mse_df = pd.read_pickle(join(PROJ_DIR, OUTP_DIR, 'CPM-mse.pkl'))
-delta_mse_df = pd.read_pickle(join(PROJ_DIR, OUTP_DIR, 'CPM-delta-mse.pkl'))
+locs = pd.read_csv('site_geography_MRI.csv', index_col=0)
+corr_df = pd.read_pickle(join(PROJ_DIR, OUTP_DIR, 'CPM-corrs_pm25.pkl'))
+sens_corr_df = pd.read_pickle(join(PROJ_DIR, OUTP_DIR, 'CPM-corrs_sensitivity.pkl'))
+delta_corr_df = pd.read_pickle(join(PROJ_DIR, OUTP_DIR, 'CPM-delta-corrs_pm25.pkl'))
 
-mse_df.T.mean().unstack(level=1).T.rename(geo_order, axis=0).loc[geo_order.values()].to_csv(
-    join(PROJ_DIR, OUTP_DIR, 'CPM-mse_by_site.csv')
-)
-
-delta_mse_df.T.mean().unstack(level=1).T.rename(geo_order_siemens, axis=0).loc[geo_order_siemens.values()].to_csv(
-    join(PROJ_DIR, OUTP_DIR, 'CPM-delta-mse_by_site.csv')
-)
-#locs = pd.read_csv('site_geography_MRI.csv', index_col=0)
-corr_df = pd.read_pickle(join(PROJ_DIR, OUTP_DIR, 'CPM-corrs.pkl'))
-delta_corr_df = pd.read_pickle(join(PROJ_DIR, OUTP_DIR, 'CPM-delta-corrs.pkl'))
+corr_dfs = {
+    'base': corr_df,
+    'sens': sens_corr_df,
+    'delta': delta_corr_df
+}
 
 
-models_x_contributions = pd.DataFrame(
+delta_df = pd.read_pickle(join(PROJ_DIR, DATA_DIR, "delta_rsFC-rci_abs-siemens.pkl")).dropna()
+base_df = pd.read_pickle(join(PROJ_DIR, DATA_DIR, 'data_qcd_base.pkl'))
+
+source_stat = pd.DataFrame(
     dtype=float,
-    index=site_names.keys(),
+    index=sources.values(),
     columns=pd.MultiIndex.from_product(
-        [
-            list(sources.keys()),
-            ['table_col','contribution_mean', 'contribution_std', 'model_performance', 'proportion']
-        ]
+        [['cross-sectional', 'longitudinal'], ['mean', 'std']]
     )
 )
-dat = pd.read_pickle(join(PROJ_DIR, DATA_DIR, 'data_qcd.pkl'))
-
-tril = np.tril(dat.filter(like='F').corr(), k=-1)
+for source in sources.keys():
+    source_name = sources[source]
+    source_stat.at[source_name, ('cross-sectional', 'mean')] = base_df[source].mean()
+    source_stat.at[source_name, ('cross-sectional', 'std')] = base_df[source].std()
+    source_stat.at[source_name, ('longitudinal', 'mean')] = delta_df[source].mean()
+    source_stat.at[source_name, ('longitudinal', 'std')] = delta_df[source].std()
+source_stat.to_csv(join(PROJ_DIR, OUTP_DIR, 'exposure_source_descriptives.csv'))
+### source correlations for cross-sectional and longitudinal samples
+# cross-sectional
+tril = np.tril(base_df[sources.keys()].corr(), k=-1)
 tril = pd.DataFrame(tril, index=sources.values(), columns=sources.keys()).replace({0:np.nan})
-fig,ax = plt.subplots()
-g = sns.heatmap(tril, cmap='seismic', annot=True, square=True, center=0, ax=ax)
-#g.set_yticklabels(sources.values())
+fig,ax = plt.subplots(figsize=(7,5))
+g = sns.heatmap(tril, cmap='RdBu_r', annot=True, fmt='.2f', linewidths=1, square=True, center=0, ax=ax)
+g.set_xticklabels(list(sources.keys())[:-1] + ['PM2.5'])
 g.tick_params(axis='y', labelrotation=0)
 fig.savefig(
     join(PROJ_DIR, FIGS_DIR, 'supplemental_source_corrs.png'),
     dpi=400,
     bbox_inches='tight'
 )
-ntwk_sum = pd.DataFrame(
-    dtype=float,
-    index=NETWORKS,
-    columns=sources.keys()
+# longitudinal
+tril = np.tril(delta_df[sources.keys()].corr(), k=-1)
+tril = pd.DataFrame(tril, index=sources.values(), columns=sources.keys()).replace({0:np.nan})
+fig,ax = plt.subplots(figsize=(7,5))
+g = sns.heatmap(tril, cmap='RdBu_r', annot=True, fmt='.2f', linewidths=1, square=True, center=0, ax=ax)
+g.set_xticklabels(list(sources.keys())[:-1] + ['PM2.5'])
+g.tick_params(axis='y', labelrotation=0)
+fig.savefig(
+    join(PROJ_DIR, FIGS_DIR, 'supplemental_source_corrs-delta.png'),
+    dpi=400,
+    bbox_inches='tight'
 )
 
-delta_ntwk_sum = pd.DataFrame(
-    dtype=float,
-    index=NETWORKS,
-    columns=sources.keys()
+###################################################
+ 
+#ntwk_sum = pd.DataFrame(
+#    dtype=float,
+#    index=NETWORKS,
+#    columns=sources.keys()
+#)
+
+#delta_ntwk_sum = pd.DataFrame(
+#    dtype=float,
+#    index=NETWORKS,
+#    columns=sources.keys()
+#)
+
+#both_ntwk_sum = pd.DataFrame(
+#    dtype=float,
+#    index=NETWORKS,
+#    columns=sources.keys()
+#)
+
+base_model = pd.read_pickle(
+    join(PROJ_DIR, OUTP_DIR, 'model_stats_base.pkl')
+)
+delta_model = pd.read_pickle(
+    join(PROJ_DIR, OUTP_DIR, 'model_stats_delta.pkl')
 )
 
-both_ntwk_sum = pd.DataFrame(
+
+models_x_contributions = pd.DataFrame(
     dtype=float,
-    index=NETWORKS,
-    columns=sources.keys()
+    index=pd.MultiIndex.from_product([site_names.keys(), sources.keys()]),
 )
 
-
-comparison = {}
 for source in sources.keys():
-    comparison[source] = {}
     mse_temp = mse_df.loc[source]
-    delta_temp = delta_mse_df.loc[source]
+    delta_mse = delta_mse_df.loc[source]
 
-    corr_temp = corr_df.loc[source]
-    delta_corr_temp = delta_corr_df.loc[source]
-
-    ########################
-    corr_plus = delta_corr_temp > 0.01
-    corr_minus = delta_corr_temp < -0.01
-    delta_bin = corr_plus.replace({ False: '', True: 'Δ'}) + corr_minus.replace({ False: '', True: 'Δ'})
-    
-    corr_plus = corr_temp > 0.01
-    corr_minus = corr_temp < -0.01
-    corr_bin = corr_plus.replace({ False: '', True: '$Τ_1$'}) + corr_minus.replace({ False: '', True: '$Τ_1$'})
-    
-    both = corr_bin + delta_bin
-    both = both.replace(
-        {
-            '$Τ_1$Δ': '$Τ_1,\Delta$'
-        }
-    )
-    num_temp = (corr_temp.fillna(0) + delta_corr_temp.fillna(0)) / 2
-    avg_df = pd.DataFrame(
-        dtype=float,
-        index=NETWORKS,
-        columns=NETWORKS
-    )
-    mode_df = pd.DataFrame(
-        dtype=str,
-        index=NETWORKS,
-        columns=NETWORKS
-    )
-    for var in num_temp.columns:
-        ntwk1 = var.split('_')[3]
-        ntwk2 = var.split('_')[5]
-        mean = num_temp[var].mean()
-        if np.abs(mean) > 0.01:
-            avg_df.at[ntwk1, ntwk2] = mean
-            avg_df.at[ntwk2, ntwk1] = mean
-        mode = both[var].mode()
-        if len(mode) > 0:
-            mode_df.at[ntwk1, ntwk2] = mode[0]
-            mode_df.at[ntwk2, ntwk1] = mode[0]
-        else: 
-            mode_df.at[ntwk1, ntwk2] = ''
-            mode_df.at[ntwk2, ntwk1] = ''
-    fig,ax = plt.subplots(figsize=(7,7))
-    sns.heatmap(
-        avg_df, 
-        annot=mode_df, 
-        fmt='', 
-        cmap='seismic', 
-        center=0, 
-        square=True,
-        ax=ax
-    )
-    ax.set_title(sources[source])
-    fig.savefig(
-        join(PROJ_DIR, FIGS_DIR, f'{source}-timepoints_avg.png'),
-        dpi=400,
-        bbox_inches='tight'
-    )
-    for network in NETWORKS:
-        ntwk_sum.at[network, source] = np.sum(np.abs(mse_temp.filter(like=network).mean()) > 0.01)
-        delta_ntwk_sum.at[network, source] = np.sum(delta_temp.filter(like=network).mean() > 0.01)
-        both_ntwk_sum.at[network, source] = np.sum(mse_temp.filter(like=network).mean() + delta_temp.filter(like=network).mean() > 0.01)
+    #for network in NETWORKS:
+    #    ntwk_sum.at[network, source] = np.sum(np.abs(mse_temp.filter(like=network).mean()) > 0.01)
+    #    delta_ntwk_sum.at[network, source] = np.sum(delta_temp.filter(like=network).mean() > 0.01)
+    #    both_ntwk_sum.at[network, source] = np.sum(mse_temp.filter(like=network).mean() + delta_temp.filter(like=network).mean() > 0.01)
     mse_temp = mse_temp.mean(axis=1)
-    base_corrs = mse_df.loc[source].mean().dropna()
-    delta_corrs = delta_mse_df.loc[source].mean().dropna()
-    comparison[source]['both'] = list(set(base_corrs.index) & set(delta_corrs.index))
-    comparison[source]['base_only'] = list(set(base_corrs.index) - set(delta_corrs.index))
-    comparison[source]['delta_only'] = list(set(delta_corrs.index) - set(base_corrs.index))
+    #base_corrs = mse_df.loc[source].mean().dropna()
+    #delta_corrs = delta_mse_df.loc[source].mean().dropna()
+    #comparison[source]['both'] = list(set(base_corrs.index) & set(delta_corrs.index))
+    #comparison[source]['base_only'] = list(set(base_corrs.index) - set(delta_corrs.index))
+    #comparison[source]['delta_only'] = list(set(delta_corrs.index) - set(base_corrs.index))
     for site in site_names.keys():
-        site_df = dat[dat['site_id_l'] == site]
+        temp = pd.DataFrame(dtype=float)
+        site_df = base_df[base_df['site_id_l'] == site]
         source_mean = site_df[source].mean()
-        models_x_contributions.at[site, (source, 'contribution_mean')] = source_mean
-        models_x_contributions.at[site, (source, 'contribution_std')] = site_df[source].std()
-        models_x_contributions.at[site, (source, 'model_performance')] = mse_temp.loc[site]
-        models_x_contributions.at[site, (source, 'proportion')] = mse_temp.loc[site] / source_mean
-        models_x_contributions.at[site, (source, 'table_col')] = f'{np.round(source_mean, 2)} ± {np.round(site_df[source].std(), 2)}'
+        models_x_contributions.at[(site, source), 'female_percent'] = len(site_df[site_df['demo_sex_v2_bl'] == 'Female'].index) / len(site_df.index)
+        models_x_contributions.at[(site, source), 'high_income_pct'] = len(site_df[site_df['household_income_4bins_bl'] == '[≥100K]'].index) / len(site_df.index)
+        models_x_contributions.at[(site, source), 'low_income_pct'] = len(site_df[site_df['household_income_4bins_bl'] == '[<50K]'].index) / len(site_df.index)
+        models_x_contributions.at[(site, source), 'scanner_manufacturer'] = site_df['mri_info_manufacturer'].unique()[0]
+        models_x_contributions.at[(site, source), 'nonhispwhite_pct'] = len(site_df[site_df['race_ethnicity_c_bl'] == 'White'].index) / len(site_df.index)
 
-with open(join(PROJ_DIR, OUTP_DIR, 'base_v_delta-comparisons.json'), 'w') as f:
-    json.dump(comparison, f)
+        models_x_contributions.at[(site, source), f'contribution_mean'] = source_mean
+        models_x_contributions.at[(site, source), f'contribution_std'] = site_df[source].std()
+        models_x_contributions.at[(site, source), f'rmse_in'] = base_model.loc[site][(source, 'rmse_train')]
+        models_x_contributions.at[(site, source), f'rmse_out'] = base_model.loc[site][(source, 'rmse_test')]
+        models_x_contributions.at[(site, source), f'rsq_in'] = base_model.loc[site][(source, 'rsq_train')]
+        models_x_contributions.at[(site, source), f'rsq_out'] = base_model.loc[site][(source, 'rsq_test')]
+        models_x_contributions.at[(site, source), 'source'] = source
+        models_x_contributions.at[(site, source), 'pm25_mean'] = site_df['reshist_addr1_pm252016aa'].mean()
+        #models_x_contributions.at[site, (source, f'{source}-proportion')] = mse_temp.loc[site] / source_mean
+        #models_x_contributions.at[site, (source, 'table_col')] = f'{np.round(source_mean, 2)} ± {np.round(site_df[source].std(), 2)}'
+#with open(join(PROJ_DIR, OUTP_DIR, 'base_v_delta-comparisons.json'), 'w') as f:
+#    json.dump(comparison, f)
+models_x_contributions["source"] = models_x_contributions.index.get_level_values(1)
 
 models_x_contributions.to_csv(
     join(PROJ_DIR, OUTP_DIR, 'mse x contributions.csv')
 )
 
+factors = {
+    "contribution_mean": "Exposure Mean",
+    "contribution_std": "Exposure Standard Deviation",
+    "female_percent": "Percent Female",
+    "high_income_pct": "Percent High Income (≥$100k)",
+    "low_income_pct": "Percent Low Income (≥$100k)",
+    "nonhispwhite_pct": "Percent Non-Hispanic White",
+    "pm25_mean": "Mean PM2.5"
+}
+
+###################
+sns.set(context='paper', style='white', palette='husl', font_scale=2)
+mse_corrs = pd.DataFrame(
+    dtype=float,
+    columns=pd.MultiIndex.from_product([sources.values(), ['r', 'p']]),
+    index=factors.values()
+)
+
+for factor in factors.keys():
+    row = factors[factor]
+    for source in sources.keys():
+        col = sources[source]
+        temp3 = models_x_contributions.xs(source, level=1)
+        r, p = spearmanr(
+                temp3[factor], 
+                temp3['rmse_out'],
+                nan_policy='omit'
+            )
+        mse_corrs.at[row, (col, 'r')] = np.round(r,3)
+        mse_corrs.at[row, (col, 'p')] = np.round(p,4)
+    g = sns.lmplot(
+        x=factor, 
+        y="rmse_out", 
+        data=models_x_contributions, 
+        col='source',
+        aspect=1,
+        sharex=False,
+        sharey=False
+    )
+    def annotate(data, **kws):
+        r, p = spearmanr(
+            data[factor], 
+            data['rmse_out'],
+            nan_policy='omit'
+        )
+        ax = plt.gca()
+        ax.text(.05, .8, 'r={:.2f}, p={:.2g}'.format(r, p),
+                transform=ax.transAxes)
+        
+    g.map_dataframe(annotate)
+    g.savefig(
+        join(PROJ_DIR, FIGS_DIR, f"{factor}-mse_out-plots.png"),
+        dpi=600, bbox_inches='tight'
+    )
+mse_corrs.to_csv(join(PROJ_DIR, OUTP_DIR, 'mse_corrs_base.csv'))
+
+rsq_corrs = pd.DataFrame(
+    dtype=float,
+    columns=pd.MultiIndex.from_product([sources.values(), ['r', 'p']]),
+    index=factors.values()
+)
+
+for factor in factors.keys():
+    row = factors[factor]
+    for source in sources.keys():
+        col = sources[source]
+        temp3 = models_x_contributions.xs(source, level=1)
+        r, p = spearmanr(
+                temp3[factor], 
+                temp3['rsq_out'],
+                nan_policy='omit'
+            )
+        rsq_corrs.at[row, (col, 'r')] = np.round(r,3)
+        rsq_corrs.at[row, (col, 'p')] = np.round(p,4)
+    g = sns.lmplot(
+        x=factor, 
+        y="rsq_out", 
+        data=models_x_contributions, 
+        col='source',
+        aspect=1,
+        sharex=False,
+        sharey=False
+    )
+    def annotate(data, **kws):
+        r, p = spearmanr(
+            data[factor], 
+            data['rsq_out'],
+            nan_policy='omit'
+        )
+        ax = plt.gca()
+        ax.text(.05, .8, 'r={:.2f}, p={:.2g}'.format(r, p),
+                transform=ax.transAxes)
+        
+    g.map_dataframe(annotate)
+    g.savefig(
+        join(PROJ_DIR, FIGS_DIR, f"{factor}-rsq_out-plots.png"),
+        dpi=600, bbox_inches='tight'
+    )
+rsq_corrs.to_csv(join(PROJ_DIR, OUTP_DIR, 'rsq_corrs_base.csv'))
+
+
+g = sns.swarmplot(models_x_contributions, x='source', y='model_performance',hue='scanner_manufacturer')
+g.set_xticklabels(list(sources.keys())[:-1] + ['PM2.5'])
+g.savefig(
+    join(PROJ_DIR, FIGS_DIR, f"scanner_performance_plots.png"),
+    dpi=600, bbox_inches='tight'
+)
+
+###############################
+# now for delta models
+models_x_contributions = pd.DataFrame(
+    dtype=float,
+    index=pd.MultiIndex.from_product([site_names.keys(), sources.keys()]),
+)
+
+for source in sources.keys():
+    mse_temp = mse_df.loc[source]
+    delta_mse = delta_mse_df.loc[source]
+
+    #for network in NETWORKS:
+    #    ntwk_sum.at[network, source] = np.sum(np.abs(mse_temp.filter(like=network).mean()) > 0.01)
+    #    delta_ntwk_sum.at[network, source] = np.sum(delta_temp.filter(like=network).mean() > 0.01)
+    #    both_ntwk_sum.at[network, source] = np.sum(mse_temp.filter(like=network).mean() + delta_temp.filter(like=network).mean() > 0.01)
+    mse_temp = mse_temp.mean(axis=1)
+    delta_mse = delta_mse.mean(axis=1)
+    #base_corrs = mse_df.loc[source].mean().dropna()
+    #delta_corrs = delta_mse_df.loc[source].mean().dropna()
+    #comparison[source]['both'] = list(set(base_corrs.index) & set(delta_corrs.index))
+    #comparison[source]['base_only'] = list(set(base_corrs.index) - set(delta_corrs.index))
+    #comparison[source]['delta_only'] = list(set(delta_corrs.index) - set(base_corrs.index))
+    for site in geo_order_siemens.keys():
+        temp = pd.DataFrame(dtype=float)
+        site_df = delta_df[delta_df['site_id_l'] == site]
+        source_mean = site_df[source].mean()
+        models_x_contributions.at[(site, source), 'female_percent'] = len(site_df[site_df['demo_sex_v2_bl'] == 'Female'].index) / len(site_df.index)
+        models_x_contributions.at[(site, source), 'high_income_pct'] = len(site_df[site_df['household_income_4bins_bl'] == '[≥100K]'].index) / len(site_df.index)
+        models_x_contributions.at[(site, source), 'low_income_pct'] = len(site_df[site_df['household_income_4bins_bl'] == '[<50K]'].index) / len(site_df.index)
+        models_x_contributions.at[(site, source), 'scanner_manufacturer'] = site_df['mri_info_manufacturer'].unique()[0]
+        models_x_contributions.at[(site, source), 'nonhispwhite_pct'] = len(site_df[site_df['race_ethnicity_c_bl'] == 'White'].index) / len(site_df.index)
+
+        models_x_contributions.at[(site, source), f'contribution_mean'] = source_mean
+        models_x_contributions.at[(site, source), f'contribution_std'] = site_df[source].std()
+        models_x_contributions.at[(site, source), f'rmse_in'] = delta_model.loc[site][(source, 'rmse_train')]
+        models_x_contributions.at[(site, source), f'rmse_out'] = delta_model.loc[site][(source, 'rmse_test')]
+        models_x_contributions.at[(site, source), f'rsq_in'] = delta_model.loc[site][(source, 'rsq_train')]
+        models_x_contributions.at[(site, source), f'rsq_out'] = delta_model.loc[site][(source, 'rsq_test')]
+        models_x_contributions.at[(site, source), 'source'] = source
+        models_x_contributions.at[(site, source), 'pm25_mean'] = site_df['reshist_addr1_pm252016aa'].mean()
+        #models_x_contributions.at[site, (source, f'{source}-proportion')] = mse_temp.loc[site] / source_mean
+        #models_x_contributions.at[site, (source, 'table_col')] = f'{np.round(source_mean, 2)} ± {np.round(site_df[source].std(), 2)}'
+#with open(join(PROJ_DIR, OUTP_DIR, 'base_v_delta-comparisons.json'), 'w') as f:
+#    json.dump(comparison, f)
+models_x_contributions["source"] = models_x_contributions.index.get_level_values(1)
+
+models_x_contributions.to_csv(
+    join(PROJ_DIR, OUTP_DIR, 'mse x contributions delta.csv')
+)
+
+###################
+sns.set(context='paper', style='white', palette='husl', font_scale=2)
+mse_corrs = pd.DataFrame(
+    dtype=float,
+    columns=pd.MultiIndex.from_product([sources.values(), ['r', 'p']]),
+    index=factors.values()
+)
+
+for factor in factors.keys():
+    row = factors[factor]
+    for source in sources.keys():
+        col = sources[source]
+        temp3 = models_x_contributions.xs(source, level=1)
+        r, p = spearmanr(
+                temp3[factor], 
+                temp3['rmse_out'],
+                nan_policy='omit'
+            )
+        mse_corrs.at[row, (col, 'r')] = np.round(r,3)
+        mse_corrs.at[row, (col, 'p')] = np.round(p,4)
+    g = sns.lmplot(
+        x=factor, 
+        y="rmse_out", 
+        data=models_x_contributions, 
+        col='source',
+        aspect=1,
+        sharex=False,
+        sharey=False
+    )
+    def annotate(data, **kws):
+        r, p = spearmanr(
+            data[factor], 
+            data['rmse_out'],
+            nan_policy='omit'
+        )
+        ax = plt.gca()
+        ax.text(.05, .8, 'r={:.2f}, p={:.2g}'.format(r, p),
+                transform=ax.transAxes)
+        
+    g.map_dataframe(annotate)
+    g.savefig(
+        join(PROJ_DIR, FIGS_DIR, f"{factor}-mse_out_delta-plots.png"),
+        dpi=600, bbox_inches='tight'
+    )
+mse_corrs.to_csv(join(PROJ_DIR, OUTP_DIR, 'mse_corrs_delta.csv'))
+
+rsq_corrs = pd.DataFrame(
+    dtype=float,
+    columns=pd.MultiIndex.from_product([sources.values(), ['r', 'p']]),
+    index=factors.values()
+)
+
+for factor in factors.keys():
+    row = factors[factor]
+    for source in sources.keys():
+        col = sources[source]
+        temp3 = models_x_contributions.xs(source, level=1)
+        r, p = spearmanr(
+                temp3[factor], 
+                temp3['rsq_out'],
+                nan_policy='omit'
+            )
+        rsq_corrs.at[row, (col, 'r')] = np.round(r,3)
+        rsq_corrs.at[row, (col, 'p')] = np.round(p,4)
+    g = sns.lmplot(
+        x=factor, 
+        y="rsq_out", 
+        data=models_x_contributions, 
+        col='source',
+        aspect=1,
+        sharex=False,
+        sharey=False
+    )
+    def annotate(data, **kws):
+        r, p = spearmanr(
+            data[factor], 
+            data['rsq_out'],
+            nan_policy='omit'
+        )
+        ax = plt.gca()
+        ax.text(.05, .8, 'r={:.2f}, p={:.2g}'.format(r, p),
+                transform=ax.transAxes)
+        
+    g.map_dataframe(annotate)
+    g.savefig(
+        join(PROJ_DIR, FIGS_DIR, f"{factor}-rsq_out_delta-plots.png"),
+        dpi=600, bbox_inches='tight'
+    )
+rsq_corrs.to_csv(join(PROJ_DIR, OUTP_DIR, 'rsq_corrs_delta.csv'))
+
+
+g = sns.swarmplot(models_x_contributions, x='source', y='model_performance',hue='scanner_manufacturer')
+g.set_xticklabels(list(sources.keys())[:-1] + ['PM2.5'])
+g.savefig(
+    join(PROJ_DIR, FIGS_DIR, f"scanner_performance_plots.png"),
+    dpi=600, bbox_inches='tight'
+)
+
+####################
+########################
+sns.set(context='paper', style='white', palette='husl', font_scale=1.5)
 
 describe = pd.DataFrame(
     index=sources.keys(),
@@ -372,8 +639,8 @@ for source in sources.keys():
     delta_describe.at[source, 'sdev'] = delta_mse_df.mean(axis=1).loc[source].std()
 delta_describe.to_csv(join(PROJ_DIR, OUTP_DIR, 'CPM-delta-mse_by_source.csv'))
 
-rsq_df = pd.read_pickle(join(PROJ_DIR, OUTP_DIR, 'CPM-rsq.pkl'))
-delta_rsq_df = pd.read_pickle(join(PROJ_DIR, OUTP_DIR, 'CPM-delta-rsq.pkl'))
+rsq_df = pd.read_pickle(join(PROJ_DIR, OUTP_DIR, 'CPM-rsq_pm25.pkl'))
+delta_rsq_df = pd.read_pickle(join(PROJ_DIR, OUTP_DIR, 'CPM-delta-rsq_pm25.pkl'))
 
 describe = pd.DataFrame(
     index=sources.keys(),
@@ -401,7 +668,8 @@ source_pal = sns.color_palette(
         '#DC267F', 
         '#FE6100', 
         '#FFB000', 
-        '#858686'
+        '#858686',
+        "#111111"
     ]
 )
 
@@ -418,7 +686,7 @@ for site in sites.index:
 #locs = gpd.tools.geocode(sites.site_cities, provider='nominatim', user_agent="klb0036")
 locs = pd.DataFrame()
 for city in sites.site_cities:
-    temp = gpd.tools.geocode(city, provider='nominatim', user_agent='bottfam2')
+    temp = gpd.tools.geocode(city, provider='nominatim', user_agent='bottfam')
     locs = pd.concat(
         [
             locs,
@@ -437,24 +705,24 @@ locs.to_file("geocoded_sites.geojson", driver='GeoJSON')
 for i in locs.index:
     for source in sources:
         site = locs.loc[i]['site_nums']
-        avg = df[df['site_id_l'] == site][source].mean()
-        std = df[df['site_id_l'] == site][source].std()
+        avg = base_df[base_df['site_id_l'] == site][source].mean()
+        std = base_df[base_df['site_id_l'] == site][source].std()
         locs.at[i, f'{source}_mean'] = avg
         locs.at[i, f'{source}_sdev'] = std
         if site == 'site15':
             mri = 'SIEMENS'
         else:
-            mri = df[df['site_id_l'] == site]['mri_info_manufacturer'].unique()[0]
+            mri = base_df[base_df['site_id_l'] == site]['mri_info_manufacturer'].unique()[0]
         locs.at[i, 'MRI'] = mri
 
 
-for i in locs.index:
-    for source in sources:
-        site = locs.loc[i]['site_nums']
-        avg = df[df['site_id_l'] == site][source].mean()
-        std = df[df['site_id_l'] == site][source].std()
-        locs.at[i, f'{source}_mean'] = avg
-        locs.at[i, f'{source}_sdev'] = std
+#for i in locs.index:
+#    for source in sources:
+#        site = locs.loc[i]['site_nums']
+#        avg = df[df['site_id_l'] == site][source].mean()
+#        std = df[df['site_id_l'] == site][source].std()
+#        locs.at[i, f'{source}_mean'] = avg
+#        locs.at[i, f'{source}_sdev'] = std
 
 performance_corrs = pd.DataFrame(
   dtype=float,
@@ -557,8 +825,8 @@ g = sns.kdeplot(
 )
 g.get_legend().remove()
 
-ax.set_xlabel('Root Mean Squared Error', fontsize=24)
-ax.set_xlim(-0.01,0.61)
+ax.set_xlabel('Root Mean Squared Error', fontsize=14)
+ax.set_xlim(-0.01,1.25)
 sns.despine()
 #ax.axvline(0, lw=2, ls='--', color='#333333', alpha=0.4)
 
@@ -663,8 +931,8 @@ g = sns.kdeplot(
 )
 legend = g.get_legend()
 legend.remove()
-ax.set_xlabel('Root Mean Squared Error', fontsize=24)
-ax.set_xlim(-0.01,0.61)
+ax.set_xlabel('Root Mean Squared Error', fontsize=14)
+ax.set_xlim(-0.01,1.25)
 sns.despine()
 #ax.axvline(0, lw=2, ls='--', color='#333333', alpha=0.4)
 
@@ -674,149 +942,4 @@ fig.savefig(
     bbox_inches='tight'
 )
 
-performance_corrs.to_csv(join(PROJ_DIR, OUTP_DIR, 'mse_x_exposure-correlations_by_site.csv'))
-
-NETWORKS = {
-    'vs': 'Visual',
-    'ad': 'Auditory', 
-    'smh': 'Somatosensory, Hand', 
-    'smm': 'Somatosensory, Mouth',  
-    'dla': 'Dorsal Attention',
-    'vta': 'Ventral Attention',
-    #'n', 
-    'rspltp': 'Retrosplenial Temporal', 
-    'ca': 'Cinguloparietal', 
-    'cgc': 'Cingulo-Opercular', 
-    'sa': 'Salience',
-    'fo': 'Frontoparietal',
-    'dt': 'Default Mode', 
-}
-
-NTWKS = {
-    'vs': 'Vis',
-    'ad': 'Aud', 
-    'smh': 'SMH', 
-    'smm': 'SMM',  
-    'dla': 'DAttn',
-    'vta': 'VAttn',
-    #'n', 
-    'rspltp': 'RsTp', 
-    'ca': 'CPa', 
-    'cgc': 'COpp', 
-    'sa': 'SN',
-    'fo': 'FPN',
-    'dt': 'DMN', 
-}
-
-corr_df = pd.read_pickle(join(PROJ_DIR, OUTP_DIR, 'CPM-corrs.pkl'))
-delta_corr_df = pd.read_pickle(join(PROJ_DIR, OUTP_DIR, 'CPM-delta-corrs.pkl'))
-
-for source in sources.keys():
-    avg_corrs = corr_df.fillna(0).loc[source].mean()
-    corrmat = pd.DataFrame(
-        dtype=float,
-        index=NETWORKS.values(),
-        columns=NETWORKS.keys()
-    )
-    avg_corrs = avg_corrs.replace(
-        {
-            0: 999
-        }
-    )
-    for varname in avg_corrs.index:
-        network1 = varname.split('_')[3]
-        network2 = varname.split('_')[5]
-        if np.abs(avg_corrs[varname]) > 0.01:
-            #print(avg_corrs[varname])
-            corrmat.at[NETWORKS[network1], network2] = avg_corrs[varname]
-            corrmat.at[NETWORKS[network2], network1] = avg_corrs[varname]
-        else:
-            corrmat.at[NETWORKS[network1], network2] = 999
-            corrmat.at[NETWORKS[network2], network1] = 999
-    corrmat.replace(
-        {
-            0: np.nan,
-            999: 0
-        }
-    ).to_csv(
-        join(PROJ_DIR, OUTP_DIR, f'CPM-{source}-baseline_corrs.csv')
-    )
-    triangle = pd.DataFrame(
-        np.tril(corrmat),
-        index=corrmat.index,
-        columns=corrmat.columns
-    )
-    triangle = triangle.replace(
-        {
-            0: np.nan,
-            999: 0
-        }
-    )
-    fig,ax = plt.subplots(figsize=(4,4))
-    g = sns.heatmap(
-        triangle, 
-        cmap='RdBu_r', 
-        center=0, 
-        square=True, 
-        ax=ax
-    )
-    ax.set_xticklabels([NTWKS[i] for i in NETWORKS.keys()])
-    ax.set_title(sources[source])
-    fig.savefig(
-        join(PROJ_DIR, FIGS_DIR, f'CPM-{source}-baseline_corrs.png'),
-        dpi=400,
-        facecolor='#FFFFFF',
-        bbox_inches='tight'
-    )
-
-    avg_corrs = delta_corr_df.fillna(0).loc[source].mean()
-    corrmat = pd.DataFrame(
-        dtype=float,
-        index=NETWORKS.values(),
-        columns=NETWORKS.keys()
-    )
-    avg_corrs = avg_corrs.replace(
-        {
-            0: 999
-        }
-    )
-    for varname in avg_corrs.index:
-        network1 = varname.split('_')[3]
-        network2 = varname.split('_')[5]
-        if np.abs(avg_corrs[varname]) > 0.01:
-            #print(avg_corrs[varname])
-            corrmat.at[NETWORKS[network1], network2] = avg_corrs[varname]
-            corrmat.at[NETWORKS[network2], network1] = avg_corrs[varname]
-        else:
-            corrmat.at[NETWORKS[network1], network2] = 999
-            corrmat.at[NETWORKS[network2], network1] = 999
-    corrmat.replace(
-        {
-            0: np.nan,
-            999: 0
-        }
-    ).to_csv(
-        join(PROJ_DIR, OUTP_DIR, f'CPM-{source}-baseline_corrs.csv')
-    )
-    triangle = pd.DataFrame(
-        np.tril(corrmat),
-        index=corrmat.index,
-        columns=corrmat.columns
-    )
-    triangle = triangle.replace(
-        {
-            0: np.nan,
-            999: 0
-        }
-    )
-    fig,ax = plt.subplots(figsize=(4,4))
-    g = sns.heatmap(triangle, cmap='RdBu_r', center=0, square=True, ax=ax)
-    ax.set_xticklabels([NTWKS[i] for i in NETWORKS.keys()])
-    ax.set_title(sources[source])
-    fig.savefig(
-        join(PROJ_DIR, FIGS_DIR, f'CPM-{source}-delta_corrs.png'),
-        dpi=400,
-        facecolor='#FFFFFF',
-        bbox_inches='tight'
-    )
-    
+#performance_corrs.to_csv(join(PROJ_DIR, OUTP_DIR, 'mse_x_exposure-correlations_by_site.csv'))
