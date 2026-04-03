@@ -107,6 +107,9 @@ cmaps = {
 corr_df = pd.read_pickle(join(PROJ_DIR, OUTP_DIR, 'CPM-corrs.pkl'))
 delta_corr_df = pd.read_pickle(join(PROJ_DIR, OUTP_DIR, 'CPM-delta-corrs.pkl'))
 
+stronger_by_network = pd.DataFrame()
+weaker_by_network = pd.DataFrame()
+
 for source in sources.keys():
     avg_corrs = corr_df.fillna(0).loc[source].mean()
     corrmat = pd.DataFrame(
@@ -127,6 +130,15 @@ for source in sources.keys():
         else:
             corrmat.at[NETWORKS[network1], network2] = np.nan
             corrmat.at[NETWORKS[network2], network1] = np.nan
+    temp = corrmat.sum(axis=1)
+    temp.name = f'{source}B'
+    stronger_by_network = pd.concat(
+        [
+            stronger_by_network,
+            temp
+        ],
+        axis=1
+    )
     triangle = pd.DataFrame(
         np.tril(corrmat),
         index=corrmat.index,
@@ -178,6 +190,15 @@ for source in sources.keys():
         else:
             corrmat.at[NETWORKS[network1], network2] = np.nan
             corrmat.at[NETWORKS[network2], network1] = np.nan
+    temp = corrmat.sum(axis=1)
+    temp.name = f'{source}B'
+    weaker_by_network = pd.concat(
+        [
+            weaker_by_network,
+            temp
+        ],
+        axis=1
+    )
     triangle = pd.DataFrame(
         np.tril(corrmat),
         index=corrmat.index,
@@ -229,6 +250,15 @@ for source in sources.keys():
         else:
             corrmat.at[NETWORKS[network1], network2] = np.nan
             corrmat.at[NETWORKS[network2], network1] = np.nan
+    temp = corrmat.sum(axis=1)
+    temp.name = f'{source}Δ'
+    stronger_by_network = pd.concat(
+        [
+            stronger_by_network,
+            temp
+        ],
+        axis=1
+    )
     triangle = pd.DataFrame(
         np.tril(corrmat),
         index=corrmat.index,
@@ -280,6 +310,15 @@ for source in sources.keys():
         else:
             corrmat.at[NETWORKS[network1], network2] = np.nan
             corrmat.at[NETWORKS[network2], network1] = np.nan
+    temp = corrmat.sum(axis=1)
+    temp.name = f'{source}Δ'
+    weaker_by_network = pd.concat(
+        [
+            weaker_by_network,
+            temp
+        ],
+        axis=1
+    )
     triangle = pd.DataFrame(
         np.tril(corrmat),
         index=corrmat.index,
@@ -310,3 +349,9 @@ for source in sources.keys():
         transparent=True,
         #bbox_inches='tight'
     )
+stronger_by_network.to_csv(
+    join(PROJ_DIR, OUTP_DIR, 'CPM-stronger_by_network.csv')
+)
+weaker_by_network.to_csv(
+    join(PROJ_DIR, OUTP_DIR, 'CPM-weaker_by_network.csv')
+)
